@@ -480,7 +480,7 @@ const $   = id => document.getElementById(id);
 ════════════════════════════════════════════════════ */
 let db, visitorId, currentUsername;
 let canvas, engine, scene, cam;
-let eggRoot, eggMesh, eggMat, cracks=[], innerL, glowL, breakPS;
+let eggRoot, eggMesh, eggMat, qMat, cracks=[], innerL, glowL, breakPS;
 let hitList=[];
 let state='idle', stateT=0, idleT=0;
 // Tap mechanic
@@ -586,48 +586,51 @@ function buildEgg(){
   const put=(m,x,y,z)=>{m.parent=eggRoot;m.position.set(x,y,z);return m;};
   const reg=(m)=>{hitList.push(m);return m;};
 
-  // ── Main egg material (icy blue — Fabergé style)
+  // ── Main egg material — semi-transparent icy blue, so ? glows from inside
   eggMat = new BABYLON.PBRMaterial('eggMat',scene);
-  eggMat.albedoColor  = new BABYLON.Color3(.62,.82,.94); // ice blue
+  eggMat.albedoColor  = new BABYLON.Color3(.72,.88,.98);
   eggMat.metallic     = 0.14;
   eggMat.roughness    = 0.28;
   eggMat.emissiveColor= new BABYLON.Color3(0,0,0);
+  eggMat.alpha        = 0.68; // semi-transparent — reveals glow inside
+  eggMat.transparencyMode = BABYLON.PBRMaterial.PBRMATERIAL_ALPHABLEND;
 
   // ── Egg body
   eggMesh = BABYLON.MeshBuilder.CreateSphere('egg',{diameter:2.4,segments:22},scene);
   eggMesh.scaling.set(.80,1.24,.80);
   eggMesh.parent=eggRoot; eggMesh.material=eggMat; eggMesh.receiveShadows=true;
+  eggMesh.alphaIndex = 10; // render after the ? inside (back-to-front for alpha)
   reg(eggMesh);
 
-  // ── Gold "?" on front face — replaces torus rings
-  // Camera is at +Z looking at origin: screen-left = world +X, screen-right = world -X
-  // The "?" spans vertically where the two rings were (-0.30 to +0.34)
-  const mQ = pbr('mQ', 1.00,.80,.06, 1,.06, .28,.18,.0); // gold, emissive
-  const bZ = 0.91; // front face of egg (radius 1.2 * scale 0.80 = 0.96, slightly inset)
+  // ── Large "?" INSIDE the egg (z=0.20 = deep inside, 3× bigger)
+  // Camera at +Z: screen-left=world+X, screen-right=world-X
+  // The "?" spans ~1.8 units tall — fills most of the egg interior
+  qMat = new BABYLON.PBRMaterial('qMat',scene);
+  qMat.albedoColor  = new BABYLON.Color3(1.0,.80,.05);
+  qMat.metallic     = 1.0;
+  qMat.roughness    = 0.06;
+  qMat.emissiveColor= new BABYLON.Color3(.22,.14,.0); // dim warm glow at idle
+  const bZ = 0.20; // inside the egg
 
-  // Top horizontal bar (crown of arch)
-  const qTH = BABYLON.MeshBuilder.CreateBox('qTH',{width:.22,height:.078,depth:.082},scene);
-  qTH.parent=eggRoot; qTH.position.set(-.005,.26,bZ); qTH.material=mQ; glowL.addIncludedOnlyMesh(qTH);
+  const mkQ = (n,w,h) => {
+    const m = BABYLON.MeshBuilder.CreateBox(n,{width:w,height:h,depth:.25},scene);
+    m.parent=eggRoot; m.material=qMat; glowL.addIncludedOnlyMesh(m); return m;
+  };
 
-  // Left side of arch (short vertical, screen-left = world +X)
-  const qLL = BABYLON.MeshBuilder.CreateBox('qLL',{width:.078,height:.13,depth:.082},scene);
-  qLL.parent=eggRoot; qLL.position.set(+.092,.185,bZ); qLL.material=mQ; glowL.addIncludedOnlyMesh(qLL);
-
-  // Right side of arch (taller vertical, screen-right = world -X)
-  const qRL = BABYLON.MeshBuilder.CreateBox('qRL',{width:.078,height:.24,depth:.082},scene);
-  qRL.parent=eggRoot; qRL.position.set(-.092,.10,bZ); qRL.material=mQ; glowL.addIncludedOnlyMesh(qRL);
-
-  // Curve connector (horizontal going back toward center-left)
-  const qCH = BABYLON.MeshBuilder.CreateBox('qCH',{width:.17,height:.078,depth:.082},scene);
-  qCH.parent=eggRoot; qCH.position.set(-.002,.025,bZ); qCH.material=mQ; glowL.addIncludedOnlyMesh(qCH);
-
-  // Stem (short vertical, slightly screen-left)
-  const qST = BABYLON.MeshBuilder.CreateBox('qST',{width:.078,height:.17,depth:.082},scene);
-  qST.parent=eggRoot; qST.position.set(+.042,-.075,bZ); qST.material=mQ; glowL.addIncludedOnlyMesh(qST);
-
-  // Dot (sphere at bottom)
-  const qDT = BABYLON.MeshBuilder.CreateSphere('qDT',{diameter:.14,segments:8},scene);
-  qDT.parent=eggRoot; qDT.position.set(+.025,-.265,bZ); qDT.material=mQ; glowL.addIncludedOnlyMesh(qDT);
+  // Top horizontal bar
+  mkQ('qTH',.66,.23).position.set(-.015,.78,bZ);
+  // Left side of arch (short, screen-left=world+X)
+  mkQ('qLL',.23,.39).position.set(+.276,.555,bZ);
+  // Right side of arch (taller, screen-right=world-X)
+  mkQ('qRL',.23,.72).position.set(-.276,.30,bZ);
+  // Curve connector horizontal
+  mkQ('qCH',.51,.23).position.set(-.006,.075,bZ);
+  // Stem (short vertical, slightly left)
+  mkQ('qST',.23,.51).position.set(+.126,-.195,bZ);
+  // Dot (sphere)
+  const qDT=BABYLON.MeshBuilder.CreateSphere('qDT',{diameter:.42,segments:8},scene);
+  qDT.parent=eggRoot; qDT.position.set(+.075,-.795,bZ);
+  qDT.material=qMat; glowL.addIncludedOnlyMesh(qDT);
 
   // ── Jewel-toned dots (sapphire, emerald, gold, teal, ruby, amethyst)
   const dotCols=[
@@ -829,6 +832,8 @@ function doTap(){
   glowL.intensity    = .55 + prog * 1.8;
   // Egg emissive brightens (glowing from inside — warm gold through ice blue)
   eggMat.emissiveColor = new BABYLON.Color3(prog*.18, prog*.12, prog*.04);
+  // "?" gets brighter and more saturated with each tap
+  if(qMat) qMat.emissiveColor = new BABYLON.Color3(.22+prog*.55, .14+prog*.35, prog*.04);
 
   playSfx('crack');
 
@@ -872,7 +877,15 @@ function tick(){
 
   if(state==='idle'||state==='cracking'){
     eggRoot.position.y=bob;
-    if(state==='idle') eggRoot.rotation.y+=dt*.18; // slow spin only when idle
+    if(state==='idle'){
+      eggRoot.rotation.y+=dt*.18;
+      // Gentle breathing glow on the ? inside the egg
+      if(qMat) qMat.emissiveColor = new BABYLON.Color3(
+        .22+Math.sin(idleT*1.4)*.10,
+        .14+Math.sin(idleT*1.4)*.06,
+        0
+      );
+    }
     return;
   }
 
