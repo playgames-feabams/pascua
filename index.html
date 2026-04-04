@@ -310,10 +310,15 @@ function getDateRange(){
 }
 
 async function fetchPage(hallId, from, to, offset){
-  const url=`${API_BASE}?act=admin&area=balance&id=${hallId}&response=js`
-    +`&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
-    +`&limit=1000&offset=${offset}`;
-  const resp=await fetch(url,{headers:{'Authorization':`Bearer ${API_TOKEN}`}});
+  const url=`${API_BASE}?act=admin&area=balance&id=${hallId}&response=js&limit=1000&offset=${offset}`;
+  const fd=new FormData();
+  fd.append('from', from);
+  fd.append('to',   to);
+  const resp=await fetch(url,{
+    method:'POST',
+    headers:{'Authorization':`Bearer ${API_TOKEN}`},
+    body:fd
+  });
   const data=await resp.json();
   return data.operationsData||[];
 }
