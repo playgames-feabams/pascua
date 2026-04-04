@@ -302,56 +302,46 @@ const pickPrize=()=>{ const tot=PRIZES.reduce((s,p)=>s+p.w,0); let r=Math.random
 /* ══════════════════════════════════════════
    BÚSQUEDA EN LA API
 ══════════════════════════════════════════ */
-function getDateRange(){
-  const to=new Date(), from=new Date();
-  from.setMonth(from.getMonth()-SEARCH_MONTHS);
-  const fmt=d=>d.toISOString().slice(0,10)+' 00:00:00';
-  return {from:fmt(from), to:fmt(to)};
-}
+// GET sin fechas — funciona con Bearer token sin cookie de sesión
+// La API devuelve las más recientes primero
+// Paginamos hasta MAX_PAGES por sala (~15.000 transacciones ≈ 6-12 meses)
+const MAX_PAGES = 15;
 
-async function fetchPage(hallId, from, to, offset){
+async function fetchPage(hallId, offset){
   const url=`${API_BASE}?act=admin&area=balance&id=${hallId}&response=js&limit=1000&offset=${offset}`;
-  const fd=new FormData();
-  fd.append('from', from);
-  fd.append('to',   to);
-  const resp=await fetch(url,{
-    method:'POST',
-    headers:{'Authorization':`Bearer ${API_TOKEN}`},
-    body:fd
-  });
+  const resp=await fetch(url,{headers:{'Authorization':`Bearer ${API_TOKEN}`}});
   const data=await resp.json();
   return data.operationsData||[];
 }
 
 async function searchAllHalls(username){
-  const {from,to}=getDateRange();
   const uLower=username.toLowerCase().trim();
 
-  // Fase 1: todas las salas en paralelo — primera página
+  // Fase 1: primera página de todas las salas en paralelo
   const results=await Promise.allSettled(
-    HALLS.map(hall=>fetchPage(hall.id,from,to,1).then(ops=>({hall,ops})))
+    HALLS.map(hall=>fetchPage(hall.id,1).then(ops=>({hall,ops})))
   );
 
   for(const r of results){
     if(r.status!=='fulfilled') continue;
     const {hall,ops}=r.value;
-    const match=ops.find(t=>t.user.toLowerCase()===uLower);
+    const match=ops.find(t=>t.user?.toLowerCase()===uLower);
     if(match) return {uid:match.uid, platform:hall.platform};
   }
 
-  // Fase 2: paginar las salas que devolvieron exactamente 1000
+  // Fase 2: paginar salas que tuvieron 1000 resultados (pueden tener más historia)
   const toPage=results
     .filter(r=>r.status==='fulfilled'&&r.value.ops.length===1000)
     .map(r=>r.value.hall);
 
   for(const hall of toPage){
-    let offset=1001;
-    while(true){
-      const ops=await fetchPage(hall.id,from,to,offset);
-      const match=ops.find(t=>t.user.toLowerCase()===uLower);
+    let page=2;
+    while(page<=MAX_PAGES){
+      const ops=await fetchPage(hall.id,(page-1)*1000+1);
+      const match=ops.find(t=>t.user?.toLowerCase()===uLower);
       if(match) return {uid:match.uid, platform:hall.platform};
       if(ops.length<1000) break;
-      offset+=1000;
+      page++;
     }
   }
 
